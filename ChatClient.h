@@ -6,7 +6,7 @@
 #pragma comment(lib, "ws2_32.lib")
 
 #define PORT 12345
-#define BUF_SIZE 512
+#define MAX_MESSAGE_LENGTH 512
 
 class ChatClient {
 public:

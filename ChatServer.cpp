@@ -3,6 +3,7 @@
 // Initialise here because if initialise in header, there will be multiple import errors
 std::vector<SOCKET> clients;
 std::mutex clientsMutex;
+std::unordered_set<std::string> usernames;
 
 ChatServer::ChatServer() {
     WSAStartup(MAKEWORD(2,2), &wsaData);
@@ -28,17 +29,35 @@ void ChatServer::run() {
             continue;
         }
 
-        // Thread safety reasons: Clients sockets can be added or removed, mutex to avoid race conditions
-        clientsMutex.lock();
-        clients.push_back(clientSocket);
-        clientsMutex.unlock();
-
         std::thread(&ChatServer::handleClient, this, clientSocket).detach();
     }
 }
 
 void ChatServer::handleClient(SOCKET clientSocket) {
     char buffer[BUF_SIZE];
+
+    int bytesSize = recv(clientSocket, buffer, BUF_SIZE, 0);
+    if (bytesSize <= 0) {
+        closesocket(clientSocket);
+        return;
+    }
+    buffer[bytesSize] = '\0';
+    std::string username(buffer);
+
+    // Thread safety reasons: Clients sockets can be added or removed, mutex to avoid race conditions
+    clientsMutex.lock();
+    if (usernames.find(username) != usernames.end()) {
+        std::string errorMessage = USERNAME_ERROR;
+        send(clientSocket, errorMessage.c_str(), errorMessage.length(), 0);
+        closesocket(clientSocket);
+        return ;
+    } else {
+        usernames.insert(username);
+        clients.push_back(clientSocket);
+        std::string welcomeMessage = "You are connected! Welcome, " + username;
+        send(clientSocket, welcomeMessage.c_str(), welcomeMessage.length(), 0);
+    }
+    clientsMutex.unlock();
 
     while (true) {
         int bytesSize = recv(clientSocket, buffer, BUF_SIZE, 0);
@@ -47,6 +66,7 @@ void ChatServer::handleClient(SOCKET clientSocket) {
 
             clientsMutex.lock();
             clients.erase(std::remove(clients.begin(), clients.end(), clientSocket), clients.end());
+            usernames.erase(username);
             clientsMutex.unlock();
 
             break;
